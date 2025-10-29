@@ -18,7 +18,13 @@ fn main() -> anyhow::Result<()>{
 
     let image_size = 800usize*600usize;
 
-    let mut graph = Graph::new(1.0, image_size, 5, (&(activ_f as fn(Float) -> Float), 0.0, 1.0));
+    let mut graph = Graph::new(
+        1.0, 
+        image_size, 
+        CLASS.len(), 
+        5, 
+        (&(activ_f as fn(Float) -> Float), 0.0, 1.0)
+    );
     let mut cache = graph.new_cache();
     let mut output = vec![0.0f32; image_size];
 
@@ -29,7 +35,7 @@ fn main() -> anyhow::Result<()>{
                 println!("Training: {}", r.path().display());
                 let img = ImageReader::open(r.path())?.decode()?;
                 let input: Vec<f32> = img.as_bytes().iter().map(|x| x.clone() as f32).collect();
-                // graph.train(&input, &output, expected_output, learning_rate);
+                // graph.train(&input, &mut cache, &output, expected_output, learning_rate);
             }
         }
     }

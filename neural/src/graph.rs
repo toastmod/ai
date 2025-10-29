@@ -19,7 +19,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new(init_weight: Float, layer_size: usize, hidden_layers_amt: usize, node_conf: (&'static fn(Float) -> Float, Float, Float) ) -> Self {
+    pub fn new(init_weight: Float, layer_size: usize, output_layer_size: usize, hidden_layers_amt: usize, node_conf: (&'static fn(Float) -> Float, Float, Float) ) -> Self {
         let mut graph = Self {
             nodes: TagMap::new(), 
             edges: TagMap::new(), 
@@ -34,6 +34,9 @@ impl Graph {
 
         for _ in 0..graph.layer_size {
             graph.add_input_node(activ_f, activ_transform, activ_v);
+        }
+
+        for _ in 0..output_layer_size {
             graph.add_output_node(activ_f, activ_transform, activ_v);
         }
 

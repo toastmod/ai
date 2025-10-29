@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let mut graph = Graph::new(1.0, 10,10,(
+        let mut graph = Graph::new(1.0, 10, 1, 10,(
             &(activation_function as fn(f32) -> f32),
             1.0,
             1.0
