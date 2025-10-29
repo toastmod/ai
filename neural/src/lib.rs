@@ -1,7 +1,7 @@
-mod graph;
+pub mod graph;
 
 #[macro_use]
-mod math;
+pub mod math;
 
 #[cfg(test)]
 mod tests {
