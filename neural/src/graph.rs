@@ -209,18 +209,17 @@ impl Graph {
         }
     }
 
-    pub fn train(&mut self, input: &[Float], cur_output: &[Float], expected_output: &[Float], learning_rate: Float) {
+    pub fn train(&mut self, input: &[Float], output_buf: &mut Vec<Float>, expected_output: &[Float], learning_rate: Float) {
         let mut error_cache = self.new_cache();
         let mut cache = self.new_cache();
-        let mut output_buf= vec![];
 
         // Note: Assumes a forward pass occured
-        self.calc_graph(input, &mut cache, &mut output_buf);
+        self.calc_graph(input, &mut cache, output_buf);
 
         // Error check output nodes
         for i in 0..self.output_layer.len() {
             let expected = expected_output[i];
-            let output = cur_output[i];
+            let output = output_buf[i];
             let node = self.get_node(&self.output_layer[i]).unwrap();
 
             // Get output error 
