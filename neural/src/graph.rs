@@ -88,7 +88,7 @@ impl Graph {
         }
 
         // Hidden layers
-        for window_i in (0..self.hidden_layers.len()).step_by(2) {
+        for window_i in (0..self.hidden_layers.len()-1).step_by(2) {
             // NOTE: A most unfortunate clone... thankfully this should only be called on init.
             let layer0 = self.hidden_layers[window_i].clone();
             let layer1 = self.hidden_layers[window_i+1].clone();
@@ -159,7 +159,7 @@ impl Graph {
     pub fn calc_graph(&self, input: &[Float], cache: &mut TagMap<(Float, bool)>, output: &mut [Float]) {
 
         // Calculate input layer
-        for i in 0..input.len() {
+        for i in 0..self.input_layer.len() {
             let node = self.get_node(&self.input_layer[i]).unwrap();
             let cache_mem = cache[node.cache_handle].as_mut().unwrap();
             cache_mem.0 = node.calc(input[i]);
