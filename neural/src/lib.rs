@@ -15,15 +15,22 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let mut graph = Graph::new(1.0, 10, 1, 10,(
-            &(activation_function as fn(f32) -> f32),
-            1.0,
-            1.0
-        ));
+        let mut graph = Graph::new(
+            1.0, 
+            5,
+            8, 
+            2, 
+            10, 
+            (
+                &(activation_function as fn(Float) -> Float),
+                1.0,
+                1.0
+            )
+        );
         let mut cache = graph.new_cache(); 
 
-        let input = vec![];
-        let mut output = vec![];
+        let input = vec![1.0; 10];
+        let mut output = vec![0.0; 1];
 
         graph.calc_graph(&input, &mut cache, &mut output);
 

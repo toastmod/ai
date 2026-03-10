@@ -1,12 +1,19 @@
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, fs::File, io::Write, ops::IndexMut, time::Duration, vec};
 
 use crate::{forw_calc, graph, math::*, sigmoid};
 
+use graphviz_rust::{dot_structures, parse};
 use tagmap::TagMap;
 
 pub type EdgeHandle = usize;
 pub type NodeHandle = usize;
 pub type CacheHandle = usize;
+
+// macro_rules! dx {
+//     () => {
+
+//     };
+// }
 
 pub struct Graph {
     nodes: TagMap<Node>,
@@ -15,11 +22,11 @@ pub struct Graph {
     hidden_layers: Vec<Vec<usize>>,
     output_layer: Vec<usize>,
     cache: TagMap<(Float, bool)>,
-    layer_size: usize,
+    hidden_layer_size: usize,
 }
 
 impl Graph {
-    pub fn new(init_weight: Float, layer_size: usize, output_layer_size: usize, hidden_layers_amt: usize, node_conf: (&'static fn(Float) -> Float, Float, Float) ) -> Self {
+    pub fn new(init_weight: Float, input_layer_size: usize, hidden_layer_size: usize, output_layer_size: usize, hidden_layers_amt: usize, node_conf: (&'static fn(Float) -> Float, Float, Float) ) -> Self {
         let mut graph = Self {
             nodes: TagMap::new(), 
             edges: TagMap::new(), 
@@ -27,12 +34,12 @@ impl Graph {
             hidden_layers: vec![], 
             output_layer: vec![], 
             cache: TagMap::new(), 
-            layer_size
+            hidden_layer_size
         };
 
         let (activ_f, activ_transform, activ_v) = node_conf;
 
-        for _ in 0..graph.layer_size {
+        for _ in 0..input_layer_size{
             graph.add_input_node(activ_f, activ_transform, activ_v);
         }
 
@@ -47,6 +54,48 @@ impl Graph {
         graph.create_edges(init_weight);
         
         graph
+    }
+
+    fn vis_subgraph_layer(&self, layer: &[usize]) -> String {
+        let mut s = String::new();
+        for n in layer {
+            s.push_str(&format!("n{} ",n));
+        }
+        format!("{{ rank=same; {} }}", s)
+    }
+
+    fn vis_node_edges(&self, node: &Node) -> String {
+        let mut s = String::from("{ ");
+        for f in &node.forw {
+            s.push_str(&format!("n{} ",f));
+        }
+        s.push('}');
+        s
+    }
+
+    pub fn print(&self) {
+        let mut input_sub = self.vis_subgraph_layer(&self.input_layer);
+        input_sub.push('\n');
+        for layer in &self.hidden_layers {
+            input_sub.push_str(&self.vis_subgraph_layer(layer));
+            input_sub.push('\n');
+        }
+        input_sub.push_str(&self.vis_subgraph_layer(&self.output_layer));
+        input_sub.push('\n');
+
+        for ni in 0..self.nodes.len() {
+            if let Some(n) = &self.nodes[ni] {
+                input_sub.push_str(&format!("n{} -> {};", ni, self.vis_node_edges(n)));
+                input_sub.push('\n');
+            }
+        }
+
+        let contents = format!("digraph {{\n{}\n}}", input_sub);
+        if let Ok(g) = parse(&contents) && let Ok(mut f) = File::create("graph.svg") {
+            f.write_all(contents.as_bytes());
+            // graphviz_rust::exec(graph, ctx, args)
+        }
+
     }
 
     fn add_node(&mut self, activ_f: &'static fn(Float) -> Float, activ_transform: Float, activ_v: Float) -> NodeHandle {
@@ -70,7 +119,7 @@ impl Graph {
 
     fn add_layer(&mut self, activ_f: &'static fn(Float) -> Float, activ_transform: Float, activ_v: Float) {
         let mut layer = vec![];
-        for _ in 0..self.layer_size {
+        for _ in 0..self.hidden_layer_size {
             layer.push(self.add_node(activ_f, activ_transform, activ_v));
         }
         self.hidden_layers.push(layer);
@@ -80,22 +129,23 @@ impl Graph {
     fn create_edges(&mut self, init_weight: Float) {
         // Input layer
         for i in 0..self.input_layer.len() {
-            for j in 0..self.hidden_layers[0].len() {
+            for j in 0..self.hidden_layer_size {
                 let node_handle = self.input_layer[i];
-                let hidden_node_handle = self.hidden_layers[0][i];
+                let hidden_node_handle = self.hidden_layers[0][j];
                 self.connect(&node_handle, init_weight, &hidden_node_handle);
             }
         }
 
         // Hidden layers
-        for window_i in (0..self.hidden_layers.len()-1).step_by(2) {
+        for window_i in 1..self.hidden_layers.len()-1 {
+
             // NOTE: A most unfortunate clone... thankfully this should only be called on init.
             let layer0 = self.hidden_layers[window_i].clone();
             let layer1 = self.hidden_layers[window_i+1].clone();
             for i in 0..layer0.len() {
                 for j in 0..layer1.len() {
                     let node_handle = layer0[i];
-                    let hidden_node_handle = layer1[i];
+                    let hidden_node_handle = layer1[j];
                     self.connect(&node_handle, init_weight, &hidden_node_handle);
                 }
             }
@@ -105,8 +155,8 @@ impl Graph {
         let final_hidden_i = self.hidden_layers.len()-1;
         for i in 0..self.output_layer.len() {
             for j in 0..self.hidden_layers[final_hidden_i].len() {
-                let node_handle = self.input_layer[i];
-                let hidden_node_handle = self.hidden_layers[final_hidden_i][i];
+                let node_handle = self.output_layer[i];
+                let hidden_node_handle = self.hidden_layers[final_hidden_i][j];
                 self.connect(&node_handle, init_weight, &hidden_node_handle);
             }
         }
@@ -212,10 +262,10 @@ impl Graph {
         }
     }
 
-    pub fn train(&mut self, input: &[Float], cache: &mut TagMap<(f32, bool)>, output_buf: &mut Vec<Float>, expected_output: &[Float], learning_rate: Float) {
+    pub fn train(&mut self, input: &[Float], cache: &mut TagMap<(Float, bool)>, output_buf: &mut Vec<Float>, expected_output: &[Float], learning_rate: Float) {
         let mut error_cache = self.new_cache();
 
-        // Note: Assumes a forward pass occured
+        // Note: a forward pass must occur
         self.calc_graph(input, cache, output_buf);
 
         // Error check output nodes
@@ -225,26 +275,36 @@ impl Graph {
             let node = self.get_node(&self.output_layer[i]).unwrap();
 
             // Get output error 
-            let y_target = sigmoid!(expected);
-            let o_y = sigmoid!(output);
+            let y_target = expected;
+            let o_y = output;
             let o_error = y_target - o_y;
             let o_delta = o_y*(1.0-o_y)*(o_error);
+
+            std::thread::sleep(Duration::from_secs(2));
+            println!("{:?}",node.back);
 
             // Change output->hidden weight 
             for bi in node.back.clone() {
                 let edge = self.edges[bi].as_ref().unwrap();
                 let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                // println!("{}",node1_cache);
                 let y1 = sigmoid!(cache[node1_cache].unwrap().0);
                 let delta1 = y1*(1.0-y1)*(edge.weight * o_delta);
-                error_cache[node1_cache].unwrap().0 = delta1;
-                let edge_weight_delta = learning_rate*o_delta*y1;
+                let ee = error_cache.index_mut(node1_cache).as_mut().unwrap(); 
+                ee.0 = delta1;
+                let edge_weight_delta = learning_rate*delta1*y1;
                 let new_weight = edge_weight_delta + edge.weight;
 
                 let edge = self.edges[bi].as_mut().unwrap();
+                println!("o_y: {}",o_y);
+                println!("o_delta: {}",o_delta);
+                println!("delta1: {}",delta1);
+                println!("w{}.{}: {} -> {}", bi,i,edge.weight,new_weight);
                 edge.weight = new_weight;
             }
 
         }
+
 
         // Change hidden layers (from back to front)
         for layer_i in (0..self.hidden_layers.len()).rev() {
@@ -259,16 +319,25 @@ impl Graph {
                 for bi in node.back.clone() {
                     let edge = self.edges[bi].as_ref().unwrap();
                     let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                    // println!("{}",node1_cache);
                     let y1 = sigmoid!(cache[node1_cache].unwrap().0);
     
                     let o_mul = edge.weight * error_cache[o_node_cache].unwrap().0;
                     let o_delta = y1*(1.0-y1)*(o_mul);
     
                     let delta1 = y1*(1.0-y1)*(edge.weight * o_delta);
-                    let edge_weight_delta = learning_rate*o_delta*y1;
+                    let ee = error_cache.index_mut(node1_cache).as_mut().unwrap(); 
+                    ee.0 = delta1;
+
+                    let edge_weight_delta = learning_rate*delta1*y1;
                     let new_weight = edge_weight_delta + edge.weight;
     
                     let edge = self.edges[bi].as_mut().unwrap();
+                    println!("error_cache_y: {}",error_cache[o_node_cache].unwrap().0);
+                    println!("o_mul: {}",o_mul);
+                    println!("o_delta: {}",o_delta);
+                    println!("delta1: {}",delta1);
+                    println!("w{}.{}: {} -> {}", bi,i,edge.weight,new_weight);
                     edge.weight = new_weight;
                 }
 
@@ -284,16 +353,28 @@ impl Graph {
             for bi in node.back.clone() {
                 let edge = self.edges[bi].as_ref().unwrap();
                 let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                // println!("{}",node1_cache);
                 let y1 = sigmoid!(cache[node1_cache].unwrap().0);
     
                 let o_mul = edge.weight * error_cache[o_node_cache].unwrap().0;
                 let o_delta = y1*(1.0-y1)*(o_mul);
     
+                // We're at the final layer, don't worry about caching this 
                 let delta1 = y1*(1.0-y1)*(edge.weight * o_delta);
-                let edge_weight_delta = learning_rate*o_delta*y1;
+                let edge = self.edges[bi].as_mut().unwrap();
+                // let ee = error_cache.index_mut(node1_cache).as_mut().unwrap(); 
+                // ee.0 = delta1;
+
+                let edge_weight_delta = learning_rate*delta1*y1;
                 let new_weight = edge_weight_delta + edge.weight;
     
                 let edge = self.edges[bi].as_mut().unwrap();
+                println!("error_cache_y: {}",error_cache[o_node_cache].unwrap().0);
+                println!("o_mul: {}",o_mul);
+                println!("o_delta: {}",o_delta);
+                println!("delta1: {}",delta1);
+                println!("weight: {}",edge.weight);
+                println!("w{}.{}: {} -> {}", bi,i,edge.weight,new_weight);
                 edge.weight = new_weight;
             }
 
