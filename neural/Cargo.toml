@@ -12,3 +12,4 @@ tagmap = { git = "http://github.com/toastmod/tagmap" }
 image = "0.25.8"
 show-image = "0.14.1"
 anyhow = "1.0"
+rand = "*"
