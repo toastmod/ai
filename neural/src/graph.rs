@@ -1,6 +1,6 @@
 use std::{ fs::File, io::Write, ops::IndexMut };
 
-use crate::{ forw_calc, math::*, sigmoid_derivative };
+use crate::{ forw_calc, math::*, sigmoid, sigmoid_derivative };
 
 use tagmap::TagMap;
 
@@ -307,69 +307,85 @@ impl Graph {
         expected_output: &[Float],
         learning_rate: Float
     ) {
-        // Perform forward propagation to compute activations.
-        self.calc_graph(input, cache, output_buf);
-
         let mut error_cache = self.new_cache();
 
-        // Compute output deltas and update output weights.
-        for (idx, output_handle) in self.output_layer.iter().enumerate() {
-            let expected = expected_output[idx];
-            let output_value = output_buf[idx];
-            let delta = (expected - output_value) * sigmoid_derivative!(output_value);
+        // Note: Assumes a forward pass occured
+        self.calc_graph(input, cache, output_buf);
 
-            let output_node = self.get_node(output_handle).unwrap();
-            let node_back = output_node.back.clone();
-            let output_cache = error_cache.index_mut(output_node.cache_handle).as_mut().unwrap();
-            output_cache.0 = delta;
-            output_cache.1 = true;
+        // Error check output nodes
+        for i in 0..self.output_layer.len() {
+            let expected = expected_output[i];
+            let output = output_buf[i];
+            let node = self.get_node(&self.output_layer[i]).unwrap();
 
-            for bi in node_back.iter() {
-                let edge_index = *bi;
-                let edge_source_handle = self.edges[edge_index].as_ref().unwrap().a;
-                let source_cache_handle = self.nodes[edge_source_handle]
-                    .as_ref()
-                    .unwrap().cache_handle;
-                let edge = self.edges[edge_index].as_mut().unwrap();
-                let source_activation = cache[source_cache_handle].as_ref().unwrap().0;
-                edge.weight += learning_rate * delta * source_activation;
+            // Get output error
+            let y_target = sigmoid!(expected);
+            let o_y = sigmoid!(output);
+            let o_error = y_target - o_y;
+            let o_delta = o_y * (1.0 - o_y) * o_error;
+
+            // Change output->hidden weight
+            for bi in node.back.clone() {
+                let edge = self.edges[bi].as_ref().unwrap();
+                let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                let y1 = sigmoid!(cache[node1_cache].unwrap().0);
+                let delta1 = y1 * (1.0 - y1) * (edge.weight * o_delta);
+                error_cache[node1_cache].unwrap().0 = delta1;
+                let edge_weight_delta = learning_rate * o_delta * y1;
+                let new_weight = edge_weight_delta + edge.weight;
+
+                let edge = self.edges[bi].as_mut().unwrap();
+                edge.weight = new_weight;
             }
         }
 
-        // Backpropagate through hidden layers, from last hidden to first.
+        // Change hidden layers (from back to front)
         for layer_i in (0..self.hidden_layers.len()).rev() {
             let hidden_layer = &self.hidden_layers[layer_i];
 
-            for node_handle in hidden_layer.clone() {
-                let node = self.get_node(&node_handle).unwrap();
-                let node_output = cache[node.cache_handle].as_ref().unwrap().0;
-                let downstream_edges = node.forw.clone();
+            for i in 0..self.hidden_layers[layer_i].len() {
+                let node = self.get_node(&hidden_layer[i]).unwrap();
+                let o_node_cache = node.cache_handle;
 
-                // Sum the weighted deltas of all downstream nodes.
-                let mut error_sum = 0.0;
-                for fi in downstream_edges.iter() {
-                    let edge = self.get_edge(fi).unwrap();
-                    let downstream_delta = error_cache[self.get_node(&edge.b).unwrap().cache_handle]
-                        .as_ref()
-                        .unwrap().0;
-                    error_sum += edge.weight * downstream_delta;
+                // Change hidden->hidden weight
+                for bi in node.back.clone() {
+                    let edge = self.edges[bi].as_ref().unwrap();
+                    let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                    let y1 = sigmoid!(cache[node1_cache].unwrap().0);
+
+                    let o_mul = edge.weight * error_cache[o_node_cache].unwrap().0;
+                    let o_delta = y1 * (1.0 - y1) * o_mul;
+
+                    let delta1 = y1 * (1.0 - y1) * (edge.weight * o_delta);
+                    let edge_weight_delta = learning_rate * o_delta * y1;
+                    let new_weight = edge_weight_delta + edge.weight;
+
+                    let edge = self.edges[bi].as_mut().unwrap();
+                    edge.weight = new_weight;
                 }
+            }
+        }
 
-                let delta = sigmoid_derivative!(node_output) * error_sum;
-                let node_cache = error_cache.index_mut(node.cache_handle).as_mut().unwrap();
-                node_cache.0 = delta;
-                node_cache.1 = true;
+        // Change hidden->input weight
+        for i in 0..self.input_layer.len() {
+            let node = self.get_node(&self.input_layer[i]).unwrap();
+            let o_node_cache = node.cache_handle;
 
-                for bi in node.back.clone().iter() {
-                    let edge_index = *bi;
-                    let edge_source_handle = self.edges[edge_index].as_ref().unwrap().a;
-                    let source_cache_handle = self.nodes[edge_source_handle]
-                        .as_ref()
-                        .unwrap().cache_handle;
-                    let edge = self.edges[edge_index].as_mut().unwrap();
-                    let source_activation = cache[source_cache_handle].as_ref().unwrap().0;
-                    edge.weight += learning_rate * delta * source_activation;
-                }
+            // Change hidden->hidden weight
+            for bi in node.back.clone() {
+                let edge = self.edges[bi].as_ref().unwrap();
+                let node1_cache = self.get_node(&edge.a).unwrap().cache_handle;
+                let y1 = sigmoid!(cache[node1_cache].unwrap().0);
+
+                let o_mul = edge.weight * error_cache[o_node_cache].unwrap().0;
+                let o_delta = y1 * (1.0 - y1) * o_mul;
+
+                let delta1 = y1 * (1.0 - y1) * (edge.weight * o_delta);
+                let edge_weight_delta = learning_rate * o_delta * y1;
+                let new_weight = edge_weight_delta + edge.weight;
+
+                let edge = self.edges[bi].as_mut().unwrap();
+                edge.weight = new_weight;
             }
         }
     }

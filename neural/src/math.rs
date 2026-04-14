@@ -10,7 +10,7 @@ macro_rules! forw_calc {
 #[macro_export]
 macro_rules! sigmoid {
     ($a:expr) => (
-        1.0/(1.0+Float::powf(std::f32::consts::E as Float,-$a))
+        1.0/(1.0+Float::powf(std::f32::consts::E as Float,-($a/200.0)))
     );
 }
 
