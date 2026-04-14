@@ -5,8 +5,10 @@ edition = "2024"
 
 [dependencies]
 graphviz-rust = "0.9.7"
+mathtrace ={ workspace = true}
 tagmap = { git = "http://github.com/toastmod/tagmap" }
 
 [dev-dependencies]
 image = "0.25.8"
-anyhow = "*"
+show-image = "0.14.1"
+anyhow = "1.0"

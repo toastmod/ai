@@ -23,7 +23,6 @@ mod tests {
             10, 
             (
                 &(activation_function as fn(Float) -> Float),
-                1.0,
                 1.0
             )
         );

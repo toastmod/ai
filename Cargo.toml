@@ -1,3 +1,6 @@
 [workspace]
 resolver = "3"
 members = [ "neural","priorityqueue"]
+
+[workspace.dependencies]
+mathtrace = { path="../mathtrace", version = "0.1.0" }
