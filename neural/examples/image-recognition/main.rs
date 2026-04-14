@@ -20,15 +20,15 @@ const TRAINING_ITER: usize = 1usize;
 const LEARNING_RATE: Float = 0.42;
 
 // Fixed image dimensions for this example.
-const IMAGE_WIDTH: usize = 32;
-const IMAGE_HEIGHT: usize = 32;
+const IMAGE_WIDTH: usize = 12;
+const IMAGE_HEIGHT: usize = 12;
 const IMAGE_SIZE: usize = IMAGE_WIDTH * IMAGE_HEIGHT;
 
 // The set of classes used for the image recognition example.
 const CLASS: &[&'static str] = &[
-    "cats",
-    // "banana",
-    "dogs",
+    "apple",
+    "orange",
+    // "dogs",
 ];
 
 /// Return the class index for the given label.
@@ -94,7 +94,7 @@ fn load_image(r: DirEntry) -> anyhow::Result<ImageBuffer<Rgb<u8>, Vec<u8>>> {
 /// Activation function wrapper used by the neural graph.
 // #[mathtrace::mathtrace]
 fn activ_f(x: Float) -> Float {
-    let xx = x / 200.0;
+    let xx = x / 60.0;
     1.0 / (1.0 + Float::powf(std::f32::consts::E as Float, -xx))
 }
 
