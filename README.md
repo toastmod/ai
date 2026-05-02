@@ -1,5 +1,5 @@
 # AI Implementations
-These are just for personal learning right now but feel free to have a look.\
+These are just for personal learning right now but feel free to have a look.
 
 ## References
 [Backpropagation in Neural Network](https://www.geeksforgeeks.org/machine-learning/backpropagation-in-neural-network/)\
