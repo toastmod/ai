@@ -2,6 +2,7 @@ use std::fs::DirEntry;
 use std::io::Cursor;
 use std::io::Read;
 use anyhow::Context;
+use graphviz_rust::print;
 use image::ImageBuffer;
 use image::ImageReader;
 use image::Rgb;
@@ -15,11 +16,14 @@ use rand::Rng;
 use show_image::{ create_window, ImageInfo, ImageView, WindowProxy };
 
 // Number of training iterations. Present for future tuning.
-const TRAINING_EPOCS: usize = 500usize;
+const TRAINING_EPOCS: usize = 15usize;
+
+// Number of epochs for retraining
+// const TRAINING_EPOCS: usize = 15usize;
 
 // Learning rate used for training updates.
 // const LEARNING_RATE: Float = 0.42;
-const LEARNING_RATE: Float = 0.1;
+const LEARNING_RATE: Float = 0.9;
 
 // Fixed image dimensions for this example.
 const IMAGE_WIDTH: usize = 8;
@@ -32,6 +36,7 @@ const CLASS: &[&'static str] = &[
     "apple",
     "orange",
     // "dogs",
+    // "cats",
 ];
 
 /// Return the class index for the given label.
@@ -65,10 +70,7 @@ fn rgb_to_float(rgb: [u8; 3]) -> Float {
 /// Update the preview window with the supplied image buffer.
 ///
 /// Reuses the same window and image name so the content simply changes.
-fn display_image(
-    window: &WindowProxy,
-    img: &ImageBuffer<Rgb<u8>, Vec<u8>>
-) -> anyhow::Result<()> {
+fn display_image(window: &WindowProxy, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> anyhow::Result<()> {
     let image = ImageView::new(
         ImageInfo::rgb8(IMAGE_WIDTH as u32, IMAGE_HEIGHT as u32),
         img.as_raw()
@@ -109,7 +111,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Build the neural graph used for training and inference.
-    let mut graph = Graph::new(1.0, IMAGE_SIZE, IMAGE_SIZE + 12, CLASS.len(), 5, (
+    let mut graph = Graph::new(1.0, IMAGE_SIZE, IMAGE_SIZE + 12, CLASS.len(), 10, (
         &(activ_f as fn(Float) -> Float),
         0.0,
     ));
@@ -120,7 +122,7 @@ fn main() -> anyhow::Result<()> {
     let window = create_window("preview", Default::default())?;
 
     let mut cache = graph.new_cache();
-    let mut output: Vec<Float> = vec![0.0; CLASS.len()];
+    // let mut output: Vec<Float> = vec![0.0; CLASS.len()];
 
     let mut loaded_images: Vec<(Vec<Float>, &'static str)> = vec![];
 
@@ -132,7 +134,6 @@ fn main() -> anyhow::Result<()> {
 
         let mut imgs_loaded = 0;
         'imgload: for path in paths {
-
             if let Ok(r) = path {
                 if !r.path().is_dir() {
                     let rr = r.path().display().to_string();
@@ -144,7 +145,7 @@ fn main() -> anyhow::Result<()> {
                                 break 'imgload;
                             }
                             // println!("Training: {}", rr);
-                            let _ = display_image(&window, &ii);
+                            // let _ = display_image(&window, &ii);
                             ii
                         }
                         Err(e) => {
@@ -163,67 +164,66 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        println!("Loaded {} images! of '{}'", imgs_loaded, class);
     }
 
-    for _ in 0..TRAINING_EPOCS {
-        println!("Epoch...");
-        let mut img_refs: Vec<(&Vec<Float>, &'static str)> = loaded_images.iter().map(|(x,y)|{
-            (x, *y)
-        }).collect();
-        let mut rng = rand::thread_rng();
-        while !img_refs.is_empty() {
-            let n = rng.gen_range(0..img_refs.len());
-            let (input, class) = img_refs.remove(n);
-            graph.train(
-                &input,
-                &mut cache,
-                &mut output,
-                &get_expected(class),
-                LEARNING_RATE
-            );
-    
-    
+    loop {
+        print!("Epoch");
+        for _ in 0..TRAINING_EPOCS {
+            print!(".");
+            let mut img_refs: Vec<(&Vec<Float>, &'static str)> = loaded_images
+                .iter()
+                .map(|(x, y)| { (x, *y) })
+                .collect();
+            let mut rng = rand::thread_rng();
+            let mut output = vec![0.0; CLASS.len()];
+            while !img_refs.is_empty() {
+                let n = rng.gen_range(0..img_refs.len());
+                let (input, class) = img_refs.remove(n);
+                graph.train(&input, &mut cache, &mut output, &get_expected(class), LEARNING_RATE);
+            }
         }
-    }
+        println!("");
 
+        // Reset training state before the test run.
+        drop(cache);
+        // drop(output);
+        cache = graph.new_cache();
 
-    // Reset training state before the test run.
-    drop(cache);
-    drop(output);
-    let mut cache = graph.new_cache();
-    let mut output = vec![0.0; CLASS.len()];
+        // Test each classification label.
+        for class in CLASS {
+            let mut sum = vec![0.0; CLASS.len()];
+            let mut count = 0.0;
 
-    // Test each classification label.
-    for class in CLASS {
-        let mut sum = vec![0.0; CLASS.len()];
-        let mut count = 0.0;
+            let mut img_refs: Vec<(&Vec<Float>, &'static str)> = loaded_images
+                .iter()
+                .map(|(x, y)| { (x, *y) })
+                .collect();
+            let mut rng = rand::thread_rng();
+            while !img_refs.is_empty() {
+                let n = rng.gen_range(0..img_refs.len());
+                let (input, class) = img_refs.remove(n);
 
-        let mut img_refs: Vec<(&Vec<Float>, &'static str)> = loaded_images.iter().map(|(x,y)|{
-            (x, *y)
-        }).collect();
-        let mut rng = rand::thread_rng();
-        while !img_refs.is_empty() {
-            let n = rng.gen_range(0..img_refs.len());
-            let (input, class) = img_refs.remove(n);
-            graph.calc_graph(&input, &mut cache, &mut output);
-            count += 1.0;
-            
-            for o in 0..CLASS.len() {
-                sum[o] += output[o];
+                let mut output = vec![0.0; CLASS.len()];
+                graph.calc_graph(&input, &mut cache, &mut output);
+                count += 1.0;
+
+                for o in 0..CLASS.len() {
+                    sum[o] += output[o];
+                }
             }
 
+            println!("Analysis of class: {}", class);
+            let mut top = (CLASS.len() + 1, 0.0);
+            for idx in 0..sum.len() {
+                let avg = sum[idx] / count;
+                if avg > top.1 {
+                    top = (idx, avg);
+                }
+                println!("{} | avg: {}", CLASS[idx], avg);
+            }
+            println!("{} detected!", CLASS[top.0]);
         }
-
-        println!("Analysis of class: {}", class);
-        let mut top = (CLASS.len()+1, 0.0);
-        for idx in 0..sum.len() {
-            let avg = sum[idx] / count;
-            if avg > top.1 {
-                top = (idx, avg);
-            } 
-            println!("{} | avg: {}", CLASS[idx], avg);
-        }
-        println!("{} detected!", CLASS[top.0]);
     }
 
     Ok(())

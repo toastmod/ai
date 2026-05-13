@@ -264,8 +264,6 @@ impl Graph {
                     let cache_handle = self.get_node(&edge.a).as_ref().unwrap().cache_handle;
 
                     sum += cache[cache_handle].as_ref().unwrap().0 * edge.weight;
-
-                    let cache_val = cache[cache_handle].as_ref().unwrap().0;
                 }
 
                 let cache_mem = cache[node.cache_handle].as_mut().unwrap();
